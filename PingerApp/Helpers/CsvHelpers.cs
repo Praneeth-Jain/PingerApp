@@ -6,9 +6,10 @@ using System.Linq;
 using System.Runtime;
 using System.Text;
 using System.Threading.Tasks;
+using PingerApp.Model;
 
 
-namespace PingerApp
+namespace PingerApp.Helpers
 {
     public class CsvHelpers
     {
@@ -47,7 +48,7 @@ namespace PingerApp
             return null;
         }
 
-        public async Task  WriteToCsv(string filePath, FileModel Info)
+        public async Task WriteToCsv(string filePath, FileModel Info)
         {
             lock (lockObject)
             {

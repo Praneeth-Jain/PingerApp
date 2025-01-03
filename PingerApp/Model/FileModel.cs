@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace PingerApp
+namespace PingerApp.Model
 {
     public class FileModel
     {
@@ -14,6 +14,6 @@ namespace PingerApp
 
         public long Rtt { get; set; }
 
-        public DateTime Time { get; set; }= DateTime.Now;
+        public DateTime Time { get; set; } = DateTime.Now;
     }
 }
