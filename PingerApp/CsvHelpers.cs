@@ -12,8 +12,9 @@ namespace PingerApp
 {
     public class CsvHelpers
     {
+        private readonly object lockObject = new object();
 
-        public List<string> ReadCsv(string filePath)
+        public async Task<List<string>> ReadCsv(string filePath)
         {
             var Ip = new List<string>();
 
@@ -24,7 +25,7 @@ namespace PingerApp
                     throw new FileNotFoundException($"The file '{filePath}' was not found.");
                 }
 
-                string[] lines = File.ReadAllLines(filePath);
+                string[] lines = await File.ReadAllLinesAsync(filePath);
 
                 foreach (var line in lines)
                 {
@@ -46,23 +47,26 @@ namespace PingerApp
             return null;
         }
 
-        public void WriteToCsv(string filePath, FileModel Info)
+        public async Task  WriteToCsv(string filePath, FileModel Info)
         {
-            try
+            lock (lockObject)
             {
-               
-                using (var writer = new StreamWriter(filePath,append:true))
+                try
                 {
-                   
-                        writer.WriteLine($"{Info.Address},{Info.Status},{Info.Rtt},{Info.Time}");
-                    
-                }
 
-                Console.WriteLine($"CSV file written successfully to {filePath}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"An unexpected error occurred: {ex.Message}");
+                    using (var writer = new StreamWriter(filePath, append: true))
+                    {
+
+                        writer.WriteLine($"{Info.Address},{Info.Status},{Info.Rtt},{Info.Time}");
+
+                    }
+
+                    Console.WriteLine($"CSV file written successfully to {filePath}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"An unexpected error occurred: {ex.Message}");
+                }
             }
         }
     }

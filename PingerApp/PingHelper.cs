@@ -9,11 +9,18 @@ namespace PingerApp
 {
     public class PingHelper
     {
-        public static PingReply Pinger(string address)
+        public static async Task<PingReply> Pinger(string address)
         {
+
             Ping ping = new Ping();
             PingReply reply = null!;
-            reply =ping.Send(address, 3000);
+            int count = 0;
+            while (count<3)
+            {
+            reply =await ping.SendPingAsync(address, 2000);
+                if (reply.Status.ToString() == "Success") { return reply; }
+            count++;
+            }
             return reply;
         }
     }
