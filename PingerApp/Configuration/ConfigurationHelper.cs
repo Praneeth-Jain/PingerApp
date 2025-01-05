@@ -1,38 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 
 namespace PingerApp.Configuration
 {
-
-    public static class ConfigurationHelper
+    public interface IConfigurationHelper
     {
-        private static readonly IConfiguration _configuration;
+        string GetFilePathString(string name);
+    }
 
-        static ConfigurationHelper()
+    public class ConfigurationHelper : IConfigurationHelper
+    {
+        private readonly IConfiguration _configuration;
+
+        public ConfigurationHelper(IConfiguration configuration)
         {
-            Console.WriteLine(AppContext.BaseDirectory);
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-
-            _configuration = builder.Build();
+            _configuration = configuration;
         }
 
-        public static string GetFilePathString(string name)
+        public string GetFilePathString(string name)
         {
-           
-
-            var FilePathString = _configuration["Filepaths:"+name];
-            if (string.IsNullOrEmpty(FilePathString))
+            var filePathString = _configuration["FilePaths:" + name];
+            if (string.IsNullOrEmpty(filePathString))
             {
-                throw new InvalidOperationException($"The connection string '{name}' has not been initialized.");
+                throw new InvalidOperationException($"The file path '{name}' is not defined in the configuration.");
             }
-            return FilePathString;
-            
+            return filePathString;
         }
     }
 }

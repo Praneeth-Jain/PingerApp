@@ -9,13 +9,13 @@ using System.Threading.Tasks;
 using PingerApp.Model;
 
 
-namespace PingerApp.Helpers
+namespace PingerApp.Services
 {
-    public class CsvHelpers
+    public class CsvHelpers:ICsvHelpers
     {
         private readonly object lockObject = new object();
 
-        public  async Task<List<string>> ReadCsv(string filePath)
+        public async Task<List<string>> ReadCsv(string filePath)
         {
             var Ip = new List<string>();
 
@@ -57,9 +57,9 @@ namespace PingerApp.Helpers
 
                     using (var writer = new StreamWriter(filePath))
                     {
-                       foreach(var Ip in Info)
+                        foreach (var Ip in Info)
                         {
-                        writer.WriteLine($"{Ip.Address},{Ip.Status},{Ip.Rtt},{Ip.Time}");
+                            writer.WriteLine($"{Ip.Address},{Ip.Status},{Ip.Rtt},{Ip.Time}");
                         }
 
                     }

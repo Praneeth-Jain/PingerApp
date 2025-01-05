@@ -6,11 +6,11 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace PingerApp.Helpers
+namespace PingerApp.Services
 {
-    public class PingHelper
+    public class PingHelper:IPingHelper
     {
-        public static async Task<PingReply> Pinger(string address)
+        public  async Task<PingReply> Pinger(string address)
         {
 
             Ping ping = new Ping();

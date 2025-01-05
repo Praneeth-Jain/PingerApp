@@ -1,57 +1,43 @@
 ﻿using Microsoft.Extensions.Configuration;
 using PingerApp;
 using PingerApp.Configuration;
-using PingerApp.Helpers;
 using PingerApp.Model;
+using PingerApp.Services;
+using Microsoft.Extensions.DependencyInjection;
+
 
 public class PingMain
 {
     public static async Task Main(string[] args)
     {
+        var ServiceProvider = ConfigureServices();
         try
         {
-            CsvHelpers ch = new CsvHelpers();
-            var inputString = ConfigurationHelper.GetFilePathString("InputPath");
-            var outputString = ConfigurationHelper.GetFilePathString("OutputPath");
-            var list=await ch.ReadCsv(inputString);
 
-            var maxLimit = 500;
-            SemaphoreSlim semaphore = new SemaphoreSlim(maxLimit); 
-            var csvList=new List<FileModel >();
-            var PingTaskList=new List<Task>();
-            foreach (var item in list)
-            {
-                await semaphore.WaitAsync();
+            var pingService = ServiceProvider.GetRequiredService<IPingService>();
 
-                var pingTask = Task.Run(async() =>
-                {
+            await pingService.PingTaskAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+    private static ServiceProvider ConfigureServices()
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
 
-                    try
-                    {
+        var services = new ServiceCollection();
 
-                        var res = await PingHelper.Pinger(item);
-                        var csvItems = new FileModel
-                        {
-                            Address = item,
-                            Status = res.Status.ToString(),
-                            Rtt = res.Status.ToString() == "Success" ? res.RoundtripTime : -1,
-                            Time = DateTime.Now
-                        };
-                        csvList.Add(csvItems);
-                        Console.WriteLine("Done");
-                    }
-                    catch (Exception ex) {
-                        Console.WriteLine(ex.Message);
-                    }
-                    finally { semaphore.Release(); }
-                });
-                PingTaskList.Add(pingTask);
-            };
-                await Task.WhenAll(PingTaskList);
-                ch.WriteToCsv(outputString, csvList);
-                }
-            catch (Exception ex) {
-                Console.WriteLine(ex.Message);
-            }
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
+        services.AddScoped<IPingService, PingService>();
+        services.AddScoped<ICsvHelpers, CsvHelpers>();
+        services.AddScoped<IPingHelper, PingHelper>();
+
+        return services.BuildServiceProvider();
     }
 }
