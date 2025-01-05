@@ -15,7 +15,7 @@ namespace PingerApp.Helpers
     {
         private readonly object lockObject = new object();
 
-        public async Task<List<string>> ReadCsv(string filePath)
+        public  async Task<List<string>> ReadCsv(string filePath)
         {
             var Ip = new List<string>();
 
@@ -48,17 +48,19 @@ namespace PingerApp.Helpers
             return null;
         }
 
-        public async Task WriteToCsv(string filePath, FileModel Info)
+        public void WriteToCsv(string filePath, List<FileModel> Info)
         {
             lock (lockObject)
             {
                 try
                 {
 
-                    using (var writer = new StreamWriter(filePath, append: true))
+                    using (var writer = new StreamWriter(filePath))
                     {
-
-                        writer.WriteLine($"{Info.Address},{Info.Status},{Info.Rtt},{Info.Time}");
+                       foreach(var Ip in Info)
+                        {
+                        writer.WriteLine($"{Ip.Address},{Ip.Status},{Ip.Rtt},{Ip.Time}");
+                        }
 
                     }
 
