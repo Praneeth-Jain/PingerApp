@@ -1,9 +1,9 @@
 ﻿using Microsoft.Extensions.Configuration;
-using PingerApp;
 using PingerApp.Configuration;
-using PingerApp.Model;
 using PingerApp.Services;
 using Microsoft.Extensions.DependencyInjection;
+using PingerApp.Data;
+using Microsoft.EntityFrameworkCore;
 
 
 public class PingMain
@@ -37,6 +37,10 @@ public class PingMain
         services.AddScoped<IPingService, PingService>();
         services.AddScoped<ICsvHelpers, CsvHelpers>();
         services.AddScoped<IPingHelper, PingHelper>();
+        services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
+        });
 
         return services.BuildServiceProvider();
     }
