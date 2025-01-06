@@ -6,16 +6,10 @@ using PingerApp.Model;
 
 namespace PingerApp.Services
 {
-    public interface IPingService
-    {
-        Task PingTaskAsync();
-
-        Task<List<IPAdresses>> GetIPAddressesAsync();
-    }
+ 
     public class PingService:IPingService
     {
         private readonly IPingHelper _pingHelper;
-        private readonly ICsvHelpers _csvHelpers;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
 
@@ -38,7 +32,7 @@ namespace PingerApp.Services
                 //}
                 var list = await GetIPAddressesAsync();
 
-                var maxLimit = 1000;
+                var maxLimit = 2000;
                 SemaphoreSlim semaphore = new SemaphoreSlim(maxLimit);
                 var csvList = new List<PingRecord>();
                 var PingTaskList = new List<Task>();
@@ -63,7 +57,7 @@ namespace PingerApp.Services
                             csvList.Add(csvItems);
                             Console.WriteLine("Done");
                         }
-                        catch (Exception ex) {Console.WriteLine(ex.Message);}
+                        catch (Exception ex) {Console.WriteLine("Error While Pinging the Address :"+ex.Message);}
                         finally { semaphore.Release(); }
                     });
                     PingTaskList.Add(pingTask);
@@ -71,15 +65,21 @@ namespace PingerApp.Services
                 await Task.WhenAll(PingTaskList);
                 await _context.PingRecords.AddRangeAsync(csvList);
                 await _context.SaveChangesAsync();
+                Console.WriteLine("Ping Records Successfully Added into the DB");
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.WriteLine("Error occured during the PingService "+ex.Message);
             }
         }
         public async Task<List<IPAdresses>> GetIPAddressesAsync()
         {
-            return await _context.IPadresses.ToListAsync();
+            try
+            {
+                return await _context.IPadresses.ToListAsync();
+            }
+            catch (Exception ex) { Console.WriteLine("Error while Reading Data from Db" + ex.Message); }
+            return null;
         }
     }
 }

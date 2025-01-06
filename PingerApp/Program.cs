@@ -20,7 +20,7 @@ public class PingMain
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            Console.WriteLine($"There was some error in the application :"+ex.Message);
         }
     }
     private static ServiceProvider ConfigureServices()
