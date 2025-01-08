@@ -14,9 +14,22 @@ public class PingMain
         try
         {
 
-            var pingService = ServiceProvider.GetRequiredService<IPingService>();
+            var ConsumerService = ServiceProvider.GetRequiredService<IPingConsumerService>();
+            var ProducerService = ServiceProvider.GetRequiredService<IPingProducerService>();
+            var DBService = ServiceProvider.GetRequiredService<IDatabaseConsumerService>();
 
-            await pingService.PingTaskAsync();
+            // Start the consumer in the background (non-blocking)
+            var consumerTask = Task.Run(() => ConsumerService.StartListening());
+
+            // Start producing IP addresses and publishing them to RabbitMQ
+            await ProducerService.PublishIPAddressesAsync();
+
+            // Start the database consumer service (to consume from RabbitMQ and store in DB)
+            DBService.StartConsumer();
+
+            // Wait for the consumer to finish (if needed), or let it run in the background
+            await consumerTask;
+
         }
         catch (Exception ex)
         {
@@ -34,9 +47,12 @@ public class PingMain
 
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
-        services.AddScoped<IPingService, PingService>();
-        services.AddScoped<ICsvHelpers, CsvHelpers>();
+        //services.AddScoped<IPingService, PingService>();
+        //services.AddScoped<ICsvHelpers, CsvHelpers>();
         services.AddScoped<IPingHelper, PingHelper>();
+        services.AddSingleton<IRabbitMQHelper, RabbitMQHelper>();
+        services.AddScoped<IPingProducerService, PingProducerService>();
+        services.AddScoped<IPingConsumerService,PingConsumerService>();
         services.AddDbContext<ApplicationDbContext>(options =>
         {
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
