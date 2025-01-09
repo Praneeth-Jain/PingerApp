@@ -4,6 +4,7 @@ using PingerApp.Services;
 using Microsoft.Extensions.DependencyInjection;
 using PingerApp.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 
 public class PingMain
@@ -18,17 +19,9 @@ public class PingMain
             var ProducerService = ServiceProvider.GetRequiredService<IPingProducerService>();
             var DBService = ServiceProvider.GetRequiredService<IDatabaseConsumerService>();
 
-            // Start the consumer in the background (non-blocking)
-            var consumerTask = Task.Run(() => ConsumerService.StartListening());
-
-            // Start producing IP addresses and publishing them to RabbitMQ
+            ConsumerService.StartListening();
             await ProducerService.PublishIPAddressesAsync();
-
-            // Start the database consumer service (to consume from RabbitMQ and store in DB)
             DBService.StartConsumer();
-
-            // Wait for the consumer to finish (if needed), or let it run in the background
-            await consumerTask;
 
         }
         catch (Exception ex)
@@ -47,13 +40,19 @@ public class PingMain
 
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
-        //services.AddScoped<IPingService, PingService>();
-        //services.AddScoped<ICsvHelpers, CsvHelpers>();
+        services.AddScoped<IPingService, PingService>();
+        services.AddScoped<ICsvHelpers, CsvHelpers>();
         services.AddScoped<IPingHelper, PingHelper>();
+        services.AddLogging(config => config.AddConsole()); // Add logging support here
         services.AddSingleton<IRabbitMQHelper, RabbitMQHelper>();
         services.AddScoped<IPingProducerService, PingProducerService>();
         services.AddScoped<IPingConsumerService,PingConsumerService>();
+        services.AddScoped<IDatabaseConsumerService, DatabaseConsumerService>();
         services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
+        });
+        services.AddDbContextFactory<ApplicationDbContext>(options =>
         {
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
         });

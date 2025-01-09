@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using PingerApp.Data.Entity;
+using PingerApp.Model;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -48,28 +51,62 @@ namespace PingerApp.Services
 
             channel.QueueBind(queueName,exchangename,string.Empty,headers);
 
+            var maxConcurrency = 500;
+            var semaphore = new SemaphoreSlim(maxConcurrency);
+
             var consumer=new EventingBasicConsumer(channel);
             consumer.Received += async (model, ea) =>
             {
                 var body=ea.Body.ToArray();
 
                 var message = Encoding.UTF8.GetString(body);
-                var ip = JsonConvert.DeserializeObject<IPAdresses>(message);
+                var ipAddresses = JsonConvert.DeserializeObject<List<IPAdresses>>(message);
+                var pingTasks = new List<Task>();
 
-                var pingResult = await _pingHelper.Pinger(ip.IPAddress);
-
-                var resultMessage = JsonConvert.SerializeObject(new
+                foreach (var ip in ipAddresses)
                 {
-                    IPAddress = ip.IPAddress,
-                    Status = pingResult.Status.ToString(),
-                    Rtt = pingResult.RoundtripTime
-                });
+                    await semaphore.WaitAsync(); // Wait for an available slot
 
-                var ResultHeaders = new Dictionary<string, object> { { "TaskType", "StoreResult" } };
-                _rabbitMqHelper.PublishMessage(exchangename, string.Empty, ResultHeaders, resultMessage);
+                    var pingTask = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var pingResult = await _pingHelper.Pinger(ip.IPAddress);
 
-                Console.WriteLine($"Processed IP: {ip.IPAddress}");
+                            var pingRecord = new PingRecord
+                            {
+                                IPAddress = ip.IPAddress,
+                                Status = pingResult.Status.ToString(),
+                                Rtt = pingResult.RoundtripTime,
+                                Time=DateTime.Now.ToUniversalTime()
+                            };
+
+                            // Serialize and publish the result
+                            var resultMessage = JsonConvert.SerializeObject(pingRecord);
+                            var resultHeaders = new Dictionary<string, object> { { "TaskType", "StoreResult" } };
+                            _rabbitMqHelper.PublishMessage(exchangename, string.Empty, resultHeaders, resultMessage);
+
+                            Console.WriteLine($"Processed IP: {pingRecord.IPAddress}, Status: {pingRecord.Status}, RTT: {pingRecord.Rtt}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error processing IP: {ip.IPAddress}. Exception: {ex.Message}");
+                        }
+                        finally
+                        {
+                            semaphore.Release(); // Release the slot
+                        }
+                    });
+
+                    pingTasks.Add(pingTask);
+                }
+
+                // Wait for all tasks to complete
+                await Task.WhenAll(pingTasks);
+
+                Console.WriteLine("Batch processing completed.");
             };
+
 
             channel.BasicConsume(queue: queueName, autoAck: true, consumer:consumer);
 

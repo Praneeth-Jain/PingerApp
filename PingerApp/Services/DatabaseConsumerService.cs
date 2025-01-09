@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PingerApp.Data;
 using PingerApp.Model;
@@ -27,26 +29,38 @@ public class DatabaseConsumerService:IDatabaseConsumerService
     private readonly SemaphoreSlim _semaphore;
     private readonly int _batchSize;
     private readonly List<PingRecord> _pingRecords;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbContextFactory;
 
-    public DatabaseConsumerService(ApplicationDbContext context,ILogger<DatabaseConsumerService> logger,IConfiguration configuration)
+    public DatabaseConsumerService(ApplicationDbContext context,ILogger<DatabaseConsumerService> logger,IConfiguration configuration, IDbContextFactory<ApplicationDbContext> dbContextFactory)
     {
         _context = context;
         _logger = logger;
         _configuration = configuration;
-        _semaphore = new SemaphoreSlim(1, 1);
+        _semaphore = new SemaphoreSlim(500);
         _batchSize = 1000;  
         _pingRecords = new List<PingRecord>();
+        _dbContextFactory = dbContextFactory;
     }
 
 
     public void StartConsumer()
     {
-        var factory = new ConnectionFactory() { HostName = "localhost" };
-        using var connection = factory.CreateConnection();
-        using var channel = connection.CreateModel();
+        var factory = new ConnectionFactory()
+        {
+            HostName = _configuration["RabbitMQ:Host"],
+            UserName = _configuration["RabbitMQ:Username"],
+            Password = _configuration["RabbitMQ:Password"]
+        };
+        var connection = factory.CreateConnection();
+        var channel = connection.CreateModel();
 
-        var queueName = "pingQueue";
-        channel.QueueDeclare(queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
+        var exchangename = _configuration["RabbitMQ:ExchangeName"];
+        channel.ExchangeDeclare(exchange: exchangename, type: ExchangeType.Headers);
+
+        string queueName = channel.QueueDeclare().QueueName;
+
+        var headers = new Dictionary<string, object> { { "TaskType", "StoreResult" }, { "x-match", "any" } };
+        channel.QueueBind(queue: queueName, exchange: exchangename, routingKey: string.Empty, arguments: headers);
 
         var consumer = new EventingBasicConsumer(channel);
         consumer.Received += async (sender, e) =>
@@ -78,7 +92,7 @@ public class DatabaseConsumerService:IDatabaseConsumerService
                     await SaveBatchToDatabaseAsync();
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex)    
             {
                 _logger.LogError($"Error processing message: {ex.Message}");
             }
@@ -99,12 +113,17 @@ public class DatabaseConsumerService:IDatabaseConsumerService
         {
             if (_pingRecords.Any())
             {
-                await _context.PingRecords.AddRangeAsync(_pingRecords);
-                await _context.SaveChangesAsync();
+                using (var dbContext = _dbContextFactory.CreateDbContext())
+                {
 
-                _logger.LogInformation($"Successfully saved {_pingRecords.Count} records to the database.");
 
-                _pingRecords.Clear();
+                    await dbContext.PingRecords.AddRangeAsync(_pingRecords);
+                    await dbContext.SaveChangesAsync();
+
+                    _logger.LogInformation($"Successfully saved {_pingRecords.Count} records to the database.");
+
+                    _pingRecords.Clear();
+                }
             }
         }
         catch (Exception ex)

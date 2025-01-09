@@ -14,7 +14,7 @@ namespace PingerApp.Services
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
         private readonly IRabbitMQHelper _rabbitMQHelper;
-        public PingProducerService(IConfiguration configuration, ApplicationDbContext context, RabbitMQHelper rabbitMQHelper)
+        public PingProducerService(IConfiguration configuration, ApplicationDbContext context, IRabbitMQHelper rabbitMQHelper)
         {
             _configuration = configuration;
             _context = context;
@@ -25,16 +25,15 @@ namespace PingerApp.Services
         {
             var IpAddresses = await _context.IPadresses.ToListAsync();
             var ExchangeName = _configuration["RabbitMQ:ExchangeName"];
-            foreach (var Ip in IpAddresses)
-            {
+           
                 var headers = new Dictionary<string, object> { { "TaskType", "Ping" } };
-                var message = JsonConvert.SerializeObject(Ip);
+                var message = JsonConvert.SerializeObject(IpAddresses);
                 try
                 {
                     _rabbitMQHelper.PublishMessage(ExchangeName, string.Empty, headers, message);
                 }
                 catch (Exception ex) { Console.WriteLine(ex.Message); };
-            }
+            
             Console.WriteLine("All IPs successfully published to RabbitMQ");
         }
     }
