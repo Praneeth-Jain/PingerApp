@@ -1,7 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using PingerApp.Data;
 using Newtonsoft.Json;
+using Npgsql;
+using PingerApp.Data.Entity;
 
 namespace PingerApp.Services
 {
@@ -12,22 +13,52 @@ namespace PingerApp.Services
     public class PingProducerService : IPingProducerService
     {
         private readonly IConfiguration _configuration;
-        private readonly ApplicationDbContext _context;
         private readonly IRabbitMQHelper _rabbitMQHelper;
-        public PingProducerService(IConfiguration configuration, ApplicationDbContext context, IRabbitMQHelper rabbitMQHelper)
+        private string connectionString;
+        public PingProducerService(IConfiguration configuration, IRabbitMQHelper rabbitMQHelper)
         {
             _configuration = configuration;
-            _context = context;
             _rabbitMQHelper = rabbitMQHelper;
+            connectionString = configuration.GetConnectionString("DefaultConnection")??string.Empty;
         }
 
         public async Task PublishIPAddressesAsync()
         {
-            var IpAddresses = await _context.IPadresses.ToListAsync();
+            var records = new List<IPAdresses>();
+            try
+            {
+
+            using(var connection = new NpgsqlConnection(connectionString))
+{
+                await connection.OpenAsync();
+
+                var fetchQuery = "SELECT * FROM \"IPadresses\"";
+                using (var command = new NpgsqlCommand(fetchQuery, connection))
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    
+                    while (await reader.ReadAsync())
+                    {
+                        var record = new IPAdresses
+                        {
+                            IPAddress=reader.GetString(0),
+                        };
+                        records.Add(record);
+                    }
+                }
+            }
+            }catch(Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
+
+
+
             var ExchangeName = _configuration["RabbitMQ:ExchangeName"];
            
                     var headers = new Dictionary<string, object> { { "TaskType", "Ping" } };
-                var message = JsonConvert.SerializeObject(IpAddresses);
+                var message = JsonConvert.SerializeObject(records);
                 try
                 {
                     _rabbitMQHelper.PublishMessage(ExchangeName, string.Empty, headers, message);

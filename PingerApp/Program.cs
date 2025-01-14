@@ -1,75 +1,68 @@
 ﻿using Microsoft.Extensions.Configuration;
-using PingerApp.Configuration;
-using PingerApp.Services;
 using Microsoft.Extensions.DependencyInjection;
-using PingerApp.Data;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System;
+using NLog.Extensions.Logging;
+using PingerApp.Services;
+using PingerApp.Configuration;
+using PingerApp.Worker;
 
 
-
-public class PingMain
+namespace PingerApp
 {
-    public static async Task Main(string[] args)
+    public class Program
     {
-        var ServiceProvider = ConfigureServices();
-        try
+        public static async Task Main(string[] args)
         {
-
-            var ConsumerService = ServiceProvider.GetRequiredService<IPingConsumerService>();
-            var ProducerService = ServiceProvider.GetRequiredService<IPingProducerService>();
-            //var DBService = ServiceProvider.GetRequiredService<IDatabaseConsumerService>();
-
-            var producerTask = Task.Run(async () => await ProducerService.PublishIPAddressesAsync());
-            var consumerTask = Task.Run(() => ConsumerService.StartListening());
-
-            await Task.WhenAll(producerTask, consumerTask);
-            //DBService.StartConsumer();
-
-
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"There was some error in the application :"+ex.Message);
-        }
-        finally
-        {
-            if (ServiceProvider is IDisposable disposable)
+            try
             {
-                disposable.Dispose();
+                await CreateHostBuilder(args).Build().RunAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error occurred: {ex.Message}");
             }
         }
-    }
-    private static ServiceProvider ConfigureServices()
-    {
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .Build();
 
-        var services = new ServiceCollection();
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((context, config) =>
+                {
+                    config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                })
+             .ConfigureLogging(logging =>
+             {
+                 logging.ClearProviders(); 
+                 logging.SetMinimumLevel(LogLevel.Information);
+                 logging.AddNLog("nlog.config"); 
+             })
+                .ConfigureServices((hostContext, services) =>
+                {
+                   
+                        
+                    services.AddSingleton<IConfiguration>(hostContext.Configuration);
+                    services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
 
-        services.AddSingleton<IConfiguration>(configuration);
-        services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
-        services.AddScoped<IPingService, PingService>();
-        services.AddScoped<ICsvHelpers, CsvHelpers>();
-        services.AddScoped<IPingHelper, PingHelper>();
-        services.AddLogging(config => config.AddConsole()); 
-        services.AddSingleton<IRabbitMQHelper, RabbitMQHelper>();
-        services.AddScoped<IPingProducerService, PingProducerService>();
-        services.AddScoped<IPingConsumerService,PingConsumerService>();
-        services.AddScoped<IDatabaseConsumerService, DatabaseConsumerService>();
-        services.AddScoped<IDatabaseService, DatabaseService>();
-        services.AddDbContext<ApplicationDbContext>(options =>
-        {
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
-        });
-        services.AddDbContextFactory<ApplicationDbContext>(options =>
-        {
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
-        });
+                    services.AddScoped<IPingProducerService, PingProducerService>();
+                    services.AddScoped<IPingConsumerService, PingConsumerService>();
+                    services.AddScoped<IDatabaseService, DatabaseService>();
+                    services.AddScoped<IPingHelper, PingHelper>();
+                    services.AddSingleton<IRabbitMQHelper, RabbitMQHelper>();
 
-        return services.BuildServiceProvider();
+
+                    //services.AddScoped<IDatabaseConsumerService, DatabaseConsumerService>();
+                    //services.AddScoped<ICsvHelpers, CsvHelpers>();
+                    //services.AddDbContext<ApplicationDbContext>(options =>
+                    //{
+                    //    options.UseNpgsql(hostContext.Configuration.GetConnectionString("DefaultConnection"));
+                    //});
+
+                    //services.AddDbContextFactory<ApplicationDbContext>(options =>
+                    //{
+                    //    options.UseNpgsql(hostContext.Configuration.GetConnectionString("DefaultConnection"));
+                    //});
+
+                    services.AddHostedService<PingWorkerService>();
+                });
     }
 }

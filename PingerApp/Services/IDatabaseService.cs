@@ -1,10 +1,13 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Npgsql;
 using PingerApp.Data;
 using System.Data;
+using System.Linq.Expressions;
 using System.Threading.Tasks;
-
+    
 namespace PingerApp.Services
 {
     public interface IDatabaseService
@@ -14,19 +17,23 @@ namespace PingerApp.Services
 
     public class DatabaseService : IDatabaseService
     {
-        private readonly ApplicationDbContext _context;
+        private string connectionString;
 
+        private readonly ILogger<IDatabaseService> _logger;
 
-        public DatabaseService(ApplicationDbContext context)
+        public DatabaseService(IConfiguration configuration,ILogger<IDatabaseService> logger)
         {
-            _context = context;
+            connectionString = configuration.GetConnectionString("DefaultConnection");
+            _logger=logger;
         }
 
         public async Task<int> InsertRecordsAsync(string jsonInput)
         {
-           
-            using (var command = _context.Database.GetDbConnection().CreateCommand())
+            try
             {
+
+
+            using (var command = new NpgsqlConnection(connectionString).CreateCommand()){ 
                 //command.CommandText = "SELECT Insert_Ping_Records(@ping_results)";
                 //command.CommandType = System.Data.CommandType.Text;
 
@@ -54,12 +61,16 @@ namespace PingerApp.Services
                 //var totalRows=(int)await command.ExecuteScalarAsync();
 
                 await command.ExecuteNonQueryAsync();
-                var insertedCount = (outputParam.Value != DBNull.Value) ? (int)outputParam.Value : 0;
-                Console.WriteLine($"Function executed successfully");
-                return insertedCount;
-                //return totalRows;
-                
+                _logger.LogInformation($"Stored Procedure executed successfully");
+                    //return totalRows;
+                   
+                    return  (outputParam.Value != DBNull.Value) ? (int)outputParam.Value : 0;
+                   
             }
+                
+            }catch (Exception ex) { _logger.LogError($"An error occured while executing Stored procedure {ex.Message}");
+                throw;
+            };
         }
     }
 }

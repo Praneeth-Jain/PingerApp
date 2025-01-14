@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using PingerApp.Data.Entity;
 using PingerApp.Model;
@@ -22,8 +23,11 @@ namespace PingerApp.Services
         private readonly IRabbitMQHelper _rabbitMqHelper;
 
         private readonly IDatabaseService _databaseService;
-        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IConfiguration configuration,IPingHelper pingHelper,IDatabaseService databaseService) 
+
+        private readonly ILogger<IPingConsumerService> _logger;
+        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IConfiguration configuration,IPingHelper pingHelper,IDatabaseService databaseService,ILogger<IPingConsumerService> logger) 
         {
+            _logger = logger;
             _configuration = configuration;
             _pingHelper = pingHelper;
             _rabbitMqHelper = rabbitMqHelper;
@@ -57,7 +61,7 @@ namespace PingerApp.Services
 
             channel.QueueBind(queueName,exchangename,string.Empty,headers);
 
-            var maxConcurrency = 1000;
+            var maxConcurrency =int.Parse(_configuration["PingSettings:MaxConcurrency"]);
             var semaphore = new SemaphoreSlim(maxConcurrency);
 
             var consumer=new EventingBasicConsumer(channel);
@@ -69,7 +73,7 @@ namespace PingerApp.Services
                 var ipAddresses = JsonConvert.DeserializeObject<List<IPAdresses>>(message);
                 var pingTasks = new List<Task>();
                 var PingResList=new List<PingRecord>();
-
+                Console.WriteLine("Ping Process Started");
                 foreach (var ip in ipAddresses)
                 {
                     await semaphore.WaitAsync(); 
@@ -90,11 +94,11 @@ namespace PingerApp.Services
 
                             PingResList.Add(pingRecord);
 
-                            Console.WriteLine($"Processed IP: {pingRecord.IPAddress}, Status: {pingRecord.Status}, RTT: {pingRecord.Rtt}");
+                           _logger.LogInformation($"Processed IP: {pingRecord.IPAddress}, Status: {pingRecord.Status}, RTT: {pingRecord.Rtt}");
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Error processing IP: {ip.IPAddress}. Exception: {ex.Message}");
+                            _logger.LogError($"Error processing IP: {ip.IPAddress}. Exception: {ex.Message}");
                         }
                         finally
                         {
@@ -109,19 +113,19 @@ namespace PingerApp.Services
                 await Task.WhenAll(pingTasks);
                 var resultMessage = JsonConvert.SerializeObject(PingResList);
                 Stopwatch sw= Stopwatch.StartNew();
-               
-               var rows=await _databaseService.InsertRecordsAsync(resultMessage);
+                var rows=await _databaseService.InsertRecordsAsync(resultMessage);
                 sw.Stop();
 
-                Console.WriteLine($"{rows} rows inserted Succesfully in {sw.ElapsedMilliseconds} time");
-                Console.WriteLine("Batch processing completed.");
+                Console.WriteLine($"{rows} rows inserted Succesfully in {sw.Elapsed.TotalMilliseconds} time");
+                _logger.LogInformation("Batch processing completed.");
+                Environment.Exit(0);
             };
 
 
             channel.BasicConsume(queue: queueName, autoAck: true, consumer:consumer);
 
             Console.WriteLine("Ping Consumer started listening.");
-            Task.Delay(Timeout.Infinite).Wait();
+            //Task.Delay(Timeout.Infinite).Wait();
 
         }
 
