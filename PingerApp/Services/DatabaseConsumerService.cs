@@ -23,7 +23,6 @@ public interface IDatabaseConsumerService
 }
 public class DatabaseConsumerService:IDatabaseConsumerService
 {
-    private readonly ApplicationDbContext _context;
     private readonly ILogger<DatabaseConsumerService> _logger;
     private readonly IConfiguration _configuration;
     private readonly SemaphoreSlim _semaphore;
@@ -31,9 +30,8 @@ public class DatabaseConsumerService:IDatabaseConsumerService
     private readonly List<PingRecord> _pingRecords;
     private readonly IDbContextFactory<ApplicationDbContext> _dbContextFactory;
 
-    public DatabaseConsumerService(ApplicationDbContext context,ILogger<DatabaseConsumerService> logger,IConfiguration configuration, IDbContextFactory<ApplicationDbContext> dbContextFactory)
+    public DatabaseConsumerService(ILogger<DatabaseConsumerService> logger,IConfiguration configuration, IDbContextFactory<ApplicationDbContext> dbContextFactory)
     {
-        _context = context;
         _logger = logger;
         _configuration = configuration;
         _semaphore = new SemaphoreSlim(500);

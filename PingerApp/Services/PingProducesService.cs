@@ -26,7 +26,7 @@ namespace PingerApp.Services
             var IpAddresses = await _context.IPadresses.ToListAsync();
             var ExchangeName = _configuration["RabbitMQ:ExchangeName"];
            
-                var headers = new Dictionary<string, object> { { "TaskType", "Ping" } };
+                    var headers = new Dictionary<string, object> { { "TaskType", "Ping" } };
                 var message = JsonConvert.SerializeObject(IpAddresses);
                 try
                 {

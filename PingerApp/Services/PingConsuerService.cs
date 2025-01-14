@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.NetworkInformation;
+﻿using System.Diagnostics;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using PingerApp.Data.Entity;
@@ -25,11 +20,14 @@ namespace PingerApp.Services
         private readonly IPingHelper _pingHelper;
 
         private readonly IRabbitMQHelper _rabbitMqHelper;
-        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IConfiguration configuration,IPingHelper pingHelper) 
+
+        private readonly IDatabaseService _databaseService;
+        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IConfiguration configuration,IPingHelper pingHelper,IDatabaseService databaseService) 
         {
             _configuration = configuration;
             _pingHelper = pingHelper;
             _rabbitMqHelper = rabbitMqHelper;
+            _databaseService = databaseService;
         }
 
         public void StartListening()
@@ -40,18 +38,26 @@ namespace PingerApp.Services
                 UserName = _configuration["RabbitMQ:Username"],
                 Password = _configuration["RabbitMQ:Password"]
             };
+
             var connection = factory.CreateConnection();
             var channel = connection.CreateModel();
 
             var exchangename = _configuration["RabbitMQ:ExchangeName"];
-            channel.ExchangeDeclare(exchange: exchangename, type: ExchangeType.Headers);
+            channel.ExchangeDeclare(exchange: exchangename, type: ExchangeType.Headers, durable: true, autoDelete: false);
 
-            string queueName = channel.QueueDeclare().QueueName;
+            string queueName = _configuration["RabbitMQ:QueueName"];
+            channel.QueueDeclare(
+                queue: queueName,
+                durable: true,         
+                exclusive: false,      
+                autoDelete: false,     
+                arguments: null        
+            );
             var headers = new Dictionary<string, object> { { "TaskType", "Ping" }, { "x-match", "any" } };
 
             channel.QueueBind(queueName,exchangename,string.Empty,headers);
 
-            var maxConcurrency = 500;
+            var maxConcurrency = 1000;
             var semaphore = new SemaphoreSlim(maxConcurrency);
 
             var consumer=new EventingBasicConsumer(channel);
@@ -62,10 +68,11 @@ namespace PingerApp.Services
                 var message = Encoding.UTF8.GetString(body);
                 var ipAddresses = JsonConvert.DeserializeObject<List<IPAdresses>>(message);
                 var pingTasks = new List<Task>();
+                var PingResList=new List<PingRecord>();
 
                 foreach (var ip in ipAddresses)
                 {
-                    await semaphore.WaitAsync(); // Wait for an available slot
+                    await semaphore.WaitAsync(); 
 
                     var pingTask = Task.Run(async () =>
                     {
@@ -77,14 +84,11 @@ namespace PingerApp.Services
                             {
                                 IPAddress = ip.IPAddress,
                                 Status = pingResult.Status.ToString(),
-                                Rtt = pingResult.RoundtripTime,
+                                Rtt = pingResult.RoundtripTime>0 ? pingResult.RoundtripTime:-1,
                                 Time=DateTime.Now.ToUniversalTime()
                             };
 
-                            // Serialize and publish the result
-                            var resultMessage = JsonConvert.SerializeObject(pingRecord);
-                            var resultHeaders = new Dictionary<string, object> { { "TaskType", "StoreResult" } };
-                            _rabbitMqHelper.PublishMessage(exchangename, string.Empty, resultHeaders, resultMessage);
+                            PingResList.Add(pingRecord);
 
                             Console.WriteLine($"Processed IP: {pingRecord.IPAddress}, Status: {pingRecord.Status}, RTT: {pingRecord.Rtt}");
                         }
@@ -94,16 +98,22 @@ namespace PingerApp.Services
                         }
                         finally
                         {
-                            semaphore.Release(); // Release the slot
+                            semaphore.Release(); 
                         }
                     });
 
                     pingTasks.Add(pingTask);
                 }
 
-                // Wait for all tasks to complete
+              
                 await Task.WhenAll(pingTasks);
+                var resultMessage = JsonConvert.SerializeObject(PingResList);
+                Stopwatch sw= Stopwatch.StartNew();
+               
+               var rows=await _databaseService.InsertRecordsAsync(resultMessage);
+                sw.Stop();
 
+                Console.WriteLine($"{rows} rows inserted Succesfully in {sw.ElapsedMilliseconds} time");
                 Console.WriteLine("Batch processing completed.");
             };
 
@@ -111,7 +121,7 @@ namespace PingerApp.Services
             channel.BasicConsume(queue: queueName, autoAck: true, consumer:consumer);
 
             Console.WriteLine("Ping Consumer started listening.");
-            Console.ReadLine();
+            Task.Delay(Timeout.Infinite).Wait();
 
         }
 
