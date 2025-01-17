@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Npgsql;
 using PingerApp.Data.Entity;
+using PingerApp.Helpers.RabbitMQhelpers;
+using PingerApp.Model;
 
 namespace PingerApp.Services
 {
@@ -14,11 +16,14 @@ namespace PingerApp.Services
     {
         private readonly IConfiguration _configuration;
         private readonly IRabbitMQHelper _rabbitMQHelper;
+        private readonly RabbitMQSettings _rabbitMQSettings;
         private string connectionString;
-        public PingProducerService(IConfiguration configuration, IRabbitMQHelper rabbitMQHelper)
+        
+        public PingProducerService(IConfiguration configuration, IRabbitMQHelper rabbitMQHelper,RabbitMQSettings rabbitMQSettings)
         {
             _configuration = configuration;
             _rabbitMQHelper = rabbitMQHelper;
+            _rabbitMQSettings = rabbitMQSettings;
             connectionString = configuration.GetConnectionString("DefaultConnection")??string.Empty;
         }
 
@@ -32,7 +37,7 @@ namespace PingerApp.Services
 {
                 await connection.OpenAsync();
 
-                var fetchQuery = "SELECT * FROM \"IPadresses\"";
+                var fetchQuery = "SELECT * FROM ipaddresses";
                 using (var command = new NpgsqlCommand(fetchQuery, connection))
                 using (var reader = await command.ExecuteReaderAsync())
                 {
@@ -55,7 +60,7 @@ namespace PingerApp.Services
 
 
 
-            var ExchangeName = _configuration["RabbitMQ:ExchangeName"];
+            var ExchangeName = _rabbitMQSettings.ExchangeName;
            
                     var headers = new Dictionary<string, object> { { "TaskType", "Ping" } };
                 var message = JsonConvert.SerializeObject(records);

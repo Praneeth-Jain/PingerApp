@@ -6,6 +6,10 @@ using NLog.Extensions.Logging;
 using PingerApp.Services;
 using PingerApp.Configuration;
 using PingerApp.Worker;
+using PingerApp.Model;
+using Microsoft.Extensions.Options;
+using PingerApp.Helpers.RabbitMQhelpers;
+using PingerApp.Helpers.DBHelpers;
 
 
 namespace PingerApp
@@ -29,26 +33,34 @@ namespace PingerApp
                 .ConfigureAppConfiguration((context, config) =>
                 {
                     config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                    config.AddUserSecrets<Program>();
                 })
-             .ConfigureLogging(logging =>
-             {
-                 logging.ClearProviders(); 
-                 logging.SetMinimumLevel(LogLevel.Information);
-                 logging.AddNLog("nlog.config"); 
-             })
+                .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.SetMinimumLevel(LogLevel.Information);
+                    logging.AddNLog("nlog.config");
+                })
                 .ConfigureServices((hostContext, services) =>
                 {
-                   
-                        
+
+                services.Configure<RabbitMQSettings>(hostContext.
+                    Configuration.GetSection("RabbitMQ"));
+                services.AddSingleton(Resolver => Resolver.GetRequiredService<IOptions<RabbitMQSettings>>().Value);
+                
+                    services.Configure<PingSettings>(hostContext.
+                    Configuration.GetSection("PingSettings"));
+                services.AddSingleton(Resolver => Resolver.GetRequiredService<IOptions<PingSettings>>().Value);
+                    
                     services.AddSingleton<IConfiguration>(hostContext.Configuration);
                     services.AddSingleton<IConfigurationHelper, ConfigurationHelper>();
-
+                    services.AddSingleton<IRabbitMQConnectionManager, RabbitMQConnectionManager>();
                     services.AddScoped<IPingProducerService, PingProducerService>();
                     services.AddScoped<IPingConsumerService, PingConsumerService>();
                     services.AddScoped<IDatabaseService, DatabaseService>();
                     services.AddScoped<IPingHelper, PingHelper>();
                     services.AddSingleton<IRabbitMQHelper, RabbitMQHelper>();
-
+                    services.AddSingleton <DBHelper>();
 
                     //services.AddScoped<IDatabaseConsumerService, DatabaseConsumerService>();
                     //services.AddScoped<ICsvHelpers, CsvHelpers>();

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using PingerApp.Data.Entity;
+using PingerApp.Helpers.RabbitMQhelpers;
 using PingerApp.Model;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -14,9 +15,9 @@ namespace PingerApp.Services
     {
         void StartListening();
     }
+
     public class PingConsumerService:IPingConsumerService
     {
-        private readonly IConfiguration _configuration;
 
         private readonly IPingHelper _pingHelper;
 
@@ -25,31 +26,35 @@ namespace PingerApp.Services
         private readonly IDatabaseService _databaseService;
 
         private readonly ILogger<IPingConsumerService> _logger;
-        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IConfiguration configuration,IPingHelper pingHelper,IDatabaseService databaseService,ILogger<IPingConsumerService> logger) 
+        private readonly RabbitMQSettings _rabbitMQSettings;
+
+        private readonly IRabbitMQConnectionManager _connectionManager;
+
+        private readonly PingSettings _pingSettings;
+
+        public PingConsumerService(IRabbitMQHelper rabbitMqHelper,IPingHelper pingHelper,IDatabaseService databaseService,ILogger<IPingConsumerService> logger,RabbitMQSettings rabbitMQSettings,IRabbitMQConnectionManager rabbitMQConnectionManager,PingSettings pingSettings) 
         {
             _logger = logger;
-            _configuration = configuration;
+            _rabbitMQSettings = rabbitMQSettings;
+            _connectionManager = rabbitMQConnectionManager;
+            _pingSettings = pingSettings;
             _pingHelper = pingHelper;
             _rabbitMqHelper = rabbitMqHelper;
             _databaseService = databaseService;
         }
 
+
         public void StartListening()
         {
-            var factory = new ConnectionFactory()
-            {
-                HostName = _configuration["RabbitMQ:Host"],
-                UserName = _configuration["RabbitMQ:Username"],
-                Password = _configuration["RabbitMQ:Password"]
-            };
 
-            var connection = factory.CreateConnection();
-            var channel = connection.CreateModel();
 
-            var exchangename = _configuration["RabbitMQ:ExchangeName"];
+         
+            var channel = _connectionManager.CreateChannel();
+
+            var exchangename = _rabbitMQSettings.ExchangeName;
             channel.ExchangeDeclare(exchange: exchangename, type: ExchangeType.Headers, durable: true, autoDelete: false);
 
-            string queueName = _configuration["RabbitMQ:QueueName"];
+            string queueName = _rabbitMQSettings.QueueName;
             channel.QueueDeclare(
                 queue: queueName,
                 durable: true,         
@@ -61,7 +66,7 @@ namespace PingerApp.Services
 
             channel.QueueBind(queueName,exchangename,string.Empty,headers);
 
-            var maxConcurrency =int.Parse(_configuration["PingSettings:MaxConcurrency"]);
+            var maxConcurrency =_pingSettings.MaxConcurrency;
             var semaphore = new SemaphoreSlim(maxConcurrency);
 
             var consumer=new EventingBasicConsumer(channel);
@@ -70,7 +75,7 @@ namespace PingerApp.Services
                 var body=ea.Body.ToArray();
 
                 var message = Encoding.UTF8.GetString(body);
-                var ipAddresses = JsonConvert.DeserializeObject<List<IPAdresses>>(message);
+                var ipAddresses = JsonConvert.DeserializeObject<IEnumerable<IPAdresses>>(message);
                 var pingTasks = new List<Task>();
                 var PingResList=new List<PingRecord>();
                 Console.WriteLine("Ping Process Started");
@@ -88,7 +93,7 @@ namespace PingerApp.Services
                             {
                                 IPAddress = ip.IPAddress,
                                 Status = pingResult.Status.ToString(),
-                                Rtt = pingResult.RoundtripTime>0 ? pingResult.RoundtripTime:-1,
+                                Rtt = pingResult.RoundtripTime > 0 ? pingResult.RoundtripTime : -1,
                                 Time=DateTime.Now.ToUniversalTime()
                             };
 
@@ -105,9 +110,9 @@ namespace PingerApp.Services
                             semaphore.Release(); 
                         }
                     });
-
                     pingTasks.Add(pingTask);
                 }
+
 
               
                 await Task.WhenAll(pingTasks);
@@ -118,14 +123,14 @@ namespace PingerApp.Services
 
                 Console.WriteLine($"{rows} rows inserted Succesfully in {sw.Elapsed.TotalMilliseconds} time");
                 _logger.LogInformation("Batch processing completed.");
-                Environment.Exit(0);
+                
             };
 
 
             channel.BasicConsume(queue: queueName, autoAck: true, consumer:consumer);
 
             Console.WriteLine("Ping Consumer started listening.");
-            //Task.Delay(Timeout.Infinite).Wait();
+            Task.Delay(Timeout.Infinite).Wait();
 
         }
 
